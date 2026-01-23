@@ -28,7 +28,7 @@ python main.py
 
 Below is a screenshot of the command-line interface (CLI) menu for PortXcan:
 
-![CLI Menu](img/cli.png)
+![CLI Menu](img/image.png)
 
 ## Contributing
 Contributions are welcome! Please submit a pull request or open an issue for any suggestions or improvements.
