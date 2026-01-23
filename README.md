@@ -37,4 +37,4 @@ Contributions are welcome! Please submit a pull request or open an issue for any
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## Contact
-For any inquiries, please contact [aryan](aryanaditya8439@gmail.com).
+For any inquiries, please contact [aryan](www.linkedin.com/in/arxncodes).
