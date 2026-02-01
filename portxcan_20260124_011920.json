@@ -1,0 +1,14 @@
+[
+    {
+        "port": 22,
+        "service": "SSH",
+        "banner": "SSH-2.0-OpenSSH_6.6.1p1 Ubuntu-2ubuntu2.13",
+        "host": "45.33.32.156"
+    },
+    {
+        "port": 80,
+        "service": "HTTP",
+        "banner": "Not disclosed",
+        "host": "45.33.32.156"
+    }
+]

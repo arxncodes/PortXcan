@@ -11,12 +11,13 @@ from portxcan.utils import expand_target
 
 
 # ---------------------------
-# ANSI Colors (Green Theme)
+# ANSI Colors (Bluish Theme)
 # ---------------------------
-GREEN = "\033[92m"
-BRIGHT = "\033[1;92m"
-YELLOW = "\033[93m"
-RED = "\033[91m"
+GREEN = "\033[38;5;39m"
+BRIGHT = "\033[1m"
+YELLOW = "\033[38;5;214m"
+RED = "\033[38;5;196m"
+BLUE = "\033[38;5;27m"
 RESET = "\033[0m"
 
 os.system("")
@@ -37,28 +38,32 @@ def banner():
     clear()
 
     logo = [
-        "██████╗  ██████╗ ██████╗ ████████╗██╗  ██╗ ██████╗ █████╗ ███╗   ██╗",
-        "██╔══██╗██╔═══██╗██╔══██╗╚══██╔══╝╚██╗██╔╝██╔════╝██╔══██╗████╗  ██║",
-        "██████╔╝██║   ██║██████╔╝   ██║    ╚███╔╝ ██║     ███████║██╔██╗ ██║",
-        "██╔═══╝ ██║   ██║██╔══██╗   ██║    ██╔██╗ ██║     ██╔══██║██║╚██╗██║",
-        "██║     ╚██████╔╝██║  ██║   ██║   ██╔╝ ██╗╚██████╗██║  ██║██║ ╚████║",
-        "╚═╝      ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝",
+        "                                                    ",
+        "                        ▄▄▄   ▄▄▄                   ",
+        "                   ██   ████▄████                   ",
+        "████▄ ▄███▄ ████▄ ▀██▀▀  ▀█████▀  ▄████  ▀▀█▄ ████▄ ",
+        "██ ██ ██ ██ ██ ▀▀  ██   ▄███████▄ ██    ▄█▀██ ██ ██ ",
+        "████▀ ▀███▀ ██     ██   ███▀ ▀███ ▀████ ▀█▄██ ██ ██ ",
+        "██                                                  ",
+        "▀▀                                                  ",
     ]
 
     gradient = [
-        "\033[38;5;22m",   # dark green
-        "\033[38;5;28m",
-        "\033[38;5;34m",
-        "\033[38;5;40m",
-        "\033[38;5;46m",
-        "\033[1;92m",      # bright green
+        "\033[38;5;17m",  # deep navy
+        "\033[38;5;18m",
+        "\033[38;5;19m",
+        "\033[38;5;20m",
+        "\033[38;5;21m",
+        "\033[38;5;27m",
+        "\033[38;5;33m",
+        "\033[1;97m",      # bright white
     ]
 
     for line, color in zip(logo, gradient):
         print(color + line + RESET)
 
-    print("\n" + BRIGHT + "Made with ❤️ by arxncodes | Advanced Network Port Scanner | V1.0" + RESET)
-    print(BRIGHT + "_" * 90 + RESET + "\n")
+    print("\n" + BLUE + BRIGHT + "Made with ❤️ by arxncodes | Advanced Network Port Scanner | V1.0" + RESET)
+    print("\033[38;5;240m" + BRIGHT + "_" * 90 + RESET + "\n")
 
 
 def get_port_range():
@@ -163,10 +168,10 @@ def run_scan(target):
 def menu():
     while True:
         banner()
-        print(GREEN + "1. Single Host Scan")
-        print("2. CIDR Scan")
-        print("3. Launch Web UI (Optional)")
-        print("4. Exit" + RESET)
+        option_colors = [BLUE, BLUE, BLUE, BLUE]
+        options = ["1. Single Host Scan", "2. CIDR Scan", "3. Launch Web UI (Optional)", "4. Exit"]
+        for col, opt in zip(option_colors, options):
+            print(col + opt + RESET)
 
         choice = input(BRIGHT + "\nSelect option: " + RESET).strip()
 
