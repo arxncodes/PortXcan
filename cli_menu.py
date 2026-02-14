@@ -3,213 +3,335 @@ import json
 import csv
 import os
 import subprocess
+import sys
 from datetime import datetime
 import time
 import webbrowser
+
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.progress import (
+    Progress, SpinnerColumn, BarColumn,
+    TextColumn, TimeElapsedColumn, MofNCompleteColumn,
+)
+from rich.text import Text
+from rich.align import Align
+from rich.rule import Rule
+from rich.prompt import Prompt, IntPrompt
+from rich import box
+
 from portxcan.async_scanner import AsyncPortScanner
 from portxcan.utils import expand_target
 
+# ─── Globals ──────────────────────────────────────
+console = Console()
+WEB_PORT = 8000
+_web_process = None
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# ---------------------------
-# ANSI Colors (Bluish Theme)
-# ---------------------------
-GREEN = "\033[38;5;39m"
-BRIGHT = "\033[1m"
-YELLOW = "\033[38;5;214m"
-RED = "\033[38;5;196m"
-BLUE = "\033[38;5;27m"
-RESET = "\033[0m"
-
-os.system("")
-
-
-# ---------------------------
-# Helpers
-# ---------------------------
-def clear():
-    os.system("cls" if os.name == "nt" else "clear")
+LOGO = r"""
+                        ▄▄▄   ▄▄▄
+                   ██   ████▄████
+ ████▄ ▄███▄ ████▄ ▀██▀▀  ▀█████▀  ▄████  ▀▀█▄ ████▄
+ ██ ██ ██ ██ ██ ▀▀  ██   ▄███████▄ ██    ▄█▀██ ██ ██
+ ████▀ ▀███▀ ██     ██   ███▀ ▀███ ▀████ ▀█▄██ ██ ██
+ ██
+ ▀▀
+"""
 
 
-def pause():
-    input(YELLOW + "\nPress Enter to continue..." + RESET)
+# ─── Web server ───────────────────────────────────
+def start_web_server():
+    """Start uvicorn in the background."""
+    global _web_process
+    if _web_process is not None and _web_process.poll() is None:
+        return
+
+    try:
+        _web_process = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "web.app:app",
+             "--host", "127.0.0.1", "--port", str(WEB_PORT)],
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(2)
+        if _web_process.poll() is not None:
+            err = _web_process.stderr.read().decode(errors="ignore").strip()
+            console.print(f"[bold red]✗[/] Web server failed to start.")
+            if err:
+                console.print(f"[dim red]  {err}[/]")
+            _web_process = None
+    except Exception as e:
+        console.print(f"[bold red]✗[/] Could not start Web UI: {e}")
+        _web_process = None
 
 
+# ─── Banner ───────────────────────────────────────
 def banner():
-    clear()
+    console.clear()
+    logo_text = Text(LOGO)
+    logo_text.stylize("bold bright_cyan")
+    panel = Panel(
+        Align.center(logo_text),
+        title="[bold bright_blue]⚡ PortXcan[/]",
+        subtitle="[dim]Advanced Network Port Scanner • v1.0 • by arxncodes[/]",
+        border_style="bright_blue",
+        box=box.DOUBLE_EDGE,
+        padding=(0, 4),
+    )
+    console.print(panel)
 
-    logo = [
-        "                                                    ",
-        "                        ▄▄▄   ▄▄▄                   ",
-        "                   ██   ████▄████                   ",
-        "████▄ ▄███▄ ████▄ ▀██▀▀  ▀█████▀  ▄████  ▀▀█▄ ████▄ ",
-        "██ ██ ██ ██ ██ ▀▀  ██   ▄███████▄ ██    ▄█▀██ ██ ██ ",
-        "████▀ ▀███▀ ██     ██   ███▀ ▀███ ▀████ ▀█▄██ ██ ██ ",
-        "██                                                  ",
-        "▀▀                                                  ",
+    if _web_process and _web_process.poll() is None:
+        console.print(
+            Align.center(
+                Text(f"🌐 Web UI running → http://127.0.0.1:{WEB_PORT}", style="dim green")
+            )
+        )
+    console.print()
+
+
+# ─── Menu display ─────────────────────────────────
+def show_menu():
+    items = [
+        ("1", "Single Host Scan", "Scan a single IP or hostname"),
+        ("2", "CIDR Range Scan",  "Scan an entire subnet"),
+        ("3", "Open Web UI",      f"Launch browser → localhost:{WEB_PORT}"),
+        ("4", "Exit",             "Quit PortXcan"),
     ]
-
-    gradient = [
-        "\033[38;5;17m",  # deep navy
-        "\033[38;5;18m",
-        "\033[38;5;19m",
-        "\033[38;5;20m",
-        "\033[38;5;21m",
-        "\033[38;5;27m",
-        "\033[38;5;33m",
-        "\033[1;97m",      # bright white
-    ]
-
-    for line, color in zip(logo, gradient):
-        print(color + line + RESET)
-
-    print("\n" + BLUE + BRIGHT + "Made with ❤️ by arxncodes | Advanced Network Port Scanner | V1.0" + RESET)
-    print("\033[38;5;240m" + BRIGHT + "_" * 90 + RESET + "\n")
+    for num, title, desc in items:
+        console.print(f"  [bold cyan]{num}[/]  ║  [bold white]{title}[/]  [dim]— {desc}[/]")
+    console.print()
 
 
+# ─── Input helpers ────────────────────────────────
 def get_port_range():
     try:
-        start = int(input(GREEN + "Start port (default 1): " + RESET) or 1)
-        end = int(input(GREEN + "End port (default 1024): " + RESET) or 1024)
+        start = IntPrompt.ask("  [cyan]Start port[/]", default=1, console=console)
+        end = IntPrompt.ask("  [cyan]End port[/]",   default=1024, console=console)
+        if start < 1 or end > 65535 or start > end:
+            console.print("[red]  ✗ Invalid range (1-65535, start ≤ end)[/]")
+            return get_port_range()
         return start, end
     except ValueError:
-        print(RED + "[ERROR] Invalid port range." + RESET)
+        console.print("[red]  ✗ Enter valid numbers[/]")
         return get_port_range()
 
 
-# ---------------------------
-# Export Functions
-# ---------------------------
+# ─── Service colour helper ────────────────────────
+def svc_style(service: str) -> str:
+    s = service.lower()
+    if s in ("ssh", "ssh-alt", "telnet", "rdp", "vnc", "vnc-1", "vnc-2"):
+        return "bright_cyan"
+    if "http" in s:
+        return "bright_green"
+    if s in ("smb", "netbios-ssn", "netbios-ns", "msrpc", "nfs"):
+        return "bright_red"
+    if s in ("mysql", "postgresql", "mssql", "mongodb", "redis", "oracle", "cassandra"):
+        return "bright_magenta"
+    if s in ("smtp", "pop3", "imap", "smtps", "imaps", "pop3s"):
+        return "bright_yellow"
+    if s in ("ftp", "ftp-data", "sftp", "tftp"):
+        return "cyan"
+    if s in ("dns", "ldap", "ldaps", "kerberos"):
+        return "bright_blue"
+    return "dim"
+
+
+# ─── Results table ────────────────────────────────
+def show_results(results):
+    if not results:
+        console.print("[yellow]  No open ports detected.[/]")
+        return
+
+    hosts = {}
+    for r in results:
+        hosts.setdefault(r["host"], []).append(r)
+
+    for host, entries in hosts.items():
+        table = Table(
+            title=f"[bold cyan]🖥️  {host}[/]",
+            box=box.ROUNDED,
+            border_style="bright_blue",
+            header_style="bold bright_blue",
+            show_lines=False,
+            padding=(0, 2),
+            expand=True,
+        )
+        table.add_column("Port",    style="cyan",  justify="right", width=8)
+        table.add_column("Service", min_width=14)
+        table.add_column("Banner",  style="dim",   ratio=1)
+
+        for e in sorted(entries, key=lambda x: x["port"]):
+            st = svc_style(e["service"])
+            ban = e["banner"] if e["banner"] != "Not disclosed" else "—"
+            table.add_row(str(e["port"]), f"[{st}]{e['service']}[/]", ban)
+
+        console.print(table)
+        console.print()
+
+
+# ─── Export ───────────────────────────────────────
 def export_json(results):
-    filename = f"portxcan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(filename, "w") as f:
+    name = f"portxcan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(name, "w") as f:
         json.dump(results, f, indent=4)
-    print(GREEN + f"[+] Results saved to {filename}" + RESET)
+    console.print(f"  [green]✓[/] Saved → [cyan]{name}[/]")
 
 
 def export_csv(results):
-    filename = f"portxcan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    with open(filename, "w", newline="") as f:
+    name = f"portxcan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    with open(name, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["host", "port", "service", "banner"])
         for r in results:
             writer.writerow([r["host"], r["port"], r["service"], r["banner"]])
-    print(GREEN + f"[+] Results saved to {filename}" + RESET)
+    console.print(f"  [green]✓[/] Saved → [cyan]{name}[/]")
 
 
-# ---------------------------
-# Post Scan Menu
-# ---------------------------
+# ─── Post-scan menu ──────────────────────────────
 def post_scan_menu(results):
     while True:
-        print("\nScan completed.")
-        print("1. View results")
-        print("2. Export to JSON")
-        print("3. Export to CSV")
-        print("4. Return to Main Menu")
+        console.print()
+        console.print(Rule("[bold]Post-Scan Options[/]", style="blue"))
+        console.print("  [cyan]1[/]  ║  View results table")
+        console.print("  [cyan]2[/]  ║  Export to JSON")
+        console.print("  [cyan]3[/]  ║  Export to CSV")
+        console.print("  [cyan]4[/]  ║  Return to main menu")
+        console.print()
 
-        choice = input("Select option: ").strip()
+        choice = Prompt.ask("  [bold]Select[/]", choices=["1", "2", "3", "4"],
+                            default="4", console=console)
 
         if choice == "1":
-            for r in results:
-                print(
-                    GREEN +
-                    f"[OPEN] {r['host']}:{r['port']} | "
-                    f"{r['service']} | {r['banner']}" +
-                    RESET
-                )
+            show_results(results)
         elif choice == "2":
             export_json(results)
         elif choice == "3":
             export_csv(results)
         elif choice == "4":
             break
-        else:
-            print(RED + "Invalid choice." + RESET)
 
 
-# ---------------------------
-# Scan Logic
-# ---------------------------
+# ─── Scan logic ───────────────────────────────────
 def run_scan(target):
     start, end = get_port_range()
 
     try:
         hosts = expand_target(target)
     except ValueError as e:
-        print(RED + f"[ERROR] {e}" + RESET)
+        console.print(f"[bold red]  ✗ Error:[/] {e}")
         return
 
+    console.print()
+    total_ports = len(hosts) * (end - start + 1)
     results = []
+    t0 = time.time()
 
-    print(GREEN + "\n[+] Scan started...\n" + RESET)
+    with Progress(
+        SpinnerColumn(style="cyan"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=40, complete_style="bright_cyan", finished_style="green"),
+        MofNCompleteColumn(),
+        TextColumn("•"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        for host in hosts:
+            task = progress.add_task(f"[cyan]{host}[/]", total=end - start + 1)
 
-    for host in hosts:
-        scanner = AsyncPortScanner(
-            target=host,
-            start_port=start,
-            end_port=end,
-            timeout=1
-        )
-        host_results = asyncio.run(scanner.run())
+            def make_cb(t):
+                def _cb(scanned, total):
+                    progress.advance(t)
+                return _cb
 
-        if not host_results:
-            print(YELLOW + f"[INFO] No open ports on {host}" + RESET)
-        else:
+            scanner = AsyncPortScanner(
+                target=host,
+                start_port=start,
+                end_port=end,
+                timeout=1,
+                progress_cb=make_cb(task),
+            )
+            host_results = asyncio.run(scanner.run())
             for r in host_results:
                 r["host"] = host
                 results.append(r)
 
+    elapsed = time.time() - t0
+    speed = total_ports / elapsed if elapsed > 0 else 0
+
+    # ── Summary ──
+    console.print()
+    summary = Table(box=box.SIMPLE_HEAD, show_header=False, border_style="blue",
+                    padding=(0, 2), expand=True)
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=1)
+    summary.add_row(
+        f"[bold]Hosts[/]  [cyan]{len(hosts)}[/]",
+        f"[bold]Ports[/]  [cyan]{start}–{end}[/]",
+        f"[bold]Open[/]   [green]{len(results)}[/]",
+        f"[bold]Time[/]   [yellow]{elapsed:.1f}s[/]",
+        f"[bold]Speed[/]  [dim]{speed:.0f} p/s[/]",
+    )
+    console.print(Panel(summary, title="[bold]Scan Summary[/]", border_style="blue",
+                        box=box.ROUNDED))
+
+    if results:
+        console.print()
+        show_results(results)
+
     post_scan_menu(results)
 
 
-# ---------------------------
-# Main Menu (PRIMARY INTERFACE)
-# ---------------------------
+# ─── Main menu ────────────────────────────────────
 def menu():
+    start_web_server()
+
     while True:
         banner()
-        option_colors = [BLUE, BLUE, BLUE, BLUE]
-        options = ["1. Single Host Scan", "2. CIDR Scan", "3. Launch Web UI (Optional)", "4. Exit"]
-        for col, opt in zip(option_colors, options):
-            print(col + opt + RESET)
+        show_menu()
 
-        choice = input(BRIGHT + "\nSelect option: " + RESET).strip()
+        choice = Prompt.ask("  [bold bright_blue]Select option[/]",
+                            choices=["1", "2", "3", "4"], console=console)
 
         if choice == "1":
-            target = input(GREEN + "Enter IP / Hostname: " + RESET).strip()
-            run_scan(target)
-            pause()
+            target = Prompt.ask("  [cyan]Enter IP / Hostname[/]", console=console)
+            run_scan(target.strip())
+
         elif choice == "2":
-            target = input(GREEN + "Enter CIDR (e.g. 192.168.1.0/24): " + RESET).strip()
-            run_scan(target)
-            pause()
+            target = Prompt.ask("  [cyan]Enter CIDR (e.g. 192.168.1.0/24)[/]",
+                                console=console)
+            run_scan(target.strip())
+
         elif choice == "3":
-            print(GREEN + "[+] Starting PortXcan Web UI..." + RESET)
+            if _web_process is None or _web_process.poll() is not None:
+                console.print("  [yellow]⟳ Restarting web server...[/]")
+                start_web_server()
+                time.sleep(1)
 
-            subprocess.Popen(
-                ["uvicorn", "web.app:app"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
+            if _web_process and _web_process.poll() is None:
+                webbrowser.open(f"http://127.0.0.1:{WEB_PORT}/")
+                console.print("  [green]✓[/] Web UI opened in browser")
+            else:
+                console.print("  [red]✗ Web server failed to start[/]")
+            Prompt.ask("\n  [dim]Press Enter to continue[/]", default="", console=console)
 
-            # give uvicorn time to start
-            time.sleep(2)
-
-            # open browser to HOME page
-            webbrowser.open("http://127.0.0.1:8000/")
-
-            print(GREEN + "[+] Web UI opened in browser." + RESET)
-            pause()
         elif choice == "4":
-            print(GREEN + "Exiting PortXcan." + RESET)
+            if _web_process and _web_process.poll() is None:
+                _web_process.terminate()
+            console.print()
+            console.print(Panel(
+                Align.center(Text("Thanks for using PortXcan ⚡", style="bold bright_cyan")),
+                border_style="blue", box=box.ROUNDED
+            ))
             break
-        else:
-            print(RED + "Invalid option." + RESET)
-            pause()
 
 
-# ---------------------------
-# Entry Point
-# ---------------------------
+# ─── Entry ────────────────────────────────────────
 if __name__ == "__main__":
     menu()
